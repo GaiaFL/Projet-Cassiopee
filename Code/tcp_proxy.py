@@ -181,7 +181,7 @@ def get_position_s(new_predictions, mean, map): #Get the tagged position accordi
 
 
 #Load first database
-data = pd.read_excel("Database.xlsx")
+data = pd.read_excel("Database_1.xlsx")
 data = data.drop(data.columns[[1, 2]], axis=1)
 data.columns = ["Coordinates", "1", "2", "3", "Average", "MAC"]
 data['Average'] = data['Average'].apply(pd.to_numeric)
