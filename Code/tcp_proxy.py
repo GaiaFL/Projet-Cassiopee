@@ -10,7 +10,10 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import ast
 from sklearn.metrics import mean_squared_error
-from math import sqrt
+import math
+from tabula.io import read_pdf
+
+
 
 class KnnLocalizer:
 
@@ -26,25 +29,26 @@ class KnnLocalizer:
 
     def __init__(self, features, labels, k=3):
 
-        self.features = np.array(features)
-        self.labels = np.array(labels)
+        self.features = features
+        self.labels = labels
         self.k = k
 
     @staticmethod
-    def euclidean_distance(array1, array2): #Calculate the diference between each RSSI
+    def euclidean_distance(array1, array2): #Calculate the difference between each RSSI
 
         """ Euclidean distance function without squareroot taken for efficiency
-
 		Args:
 			Two arrays of equal length
 
 		Returns:
 			Distance squared between RSSI1 and RSSI2
 		"""
-
+        #print(array1) #wifi fingerprint
+        #print(array2) #dataset
         distance = np.sum((array1-array2)**2)
+        distance = math.sqrt(distance)  
         return distance
-
+    
     @staticmethod
     def timsort(array, element):
 
@@ -71,15 +75,16 @@ class KnnLocalizer:
             Test_features (array) test RSSI for which to predict location
 
         Returns:
-            An array containing coordinate prediction
+            An array containing the top 3 predicted coordinates
         """
+        size_input = len(instance)
         temp_results = []
         for i in range(len(self.features)):
             
-            RSSI = self.euclidean_distance(instance, self.features[i])
+            RSSI = self.euclidean_distance(instance, self.features[i][:size_input])
             temp_results.append((self.labels[i], RSSI)) #each localisation with the difference of RSSI   
         sorted_distances = self.timsort(temp_results, 1)
-        return np.stack(sorted_distances[0][0], axis=0) #return localisation with minimum difference of RSSI 
+        return sorted_distances[:3] #return the 3 localisation with minimum RSSI 
 
     def fit_predict(self, test_data):
 
@@ -97,20 +102,98 @@ class KnnLocalizer:
             predictions.append(self.knn_regression(sample))
         return predictions
     
-#Load database
+
+MAX_CHARS = 128
+def get_mean_point(points, debug=False):
+    # Initialize mean point
+    mean_point = [0,0]
+
+    try:
+        if len(points) > 0:
+        # Calculate the mean position of the points
+            for point in points:
+                mean_point[0] += point[0]
+                mean_point[1] += point[1]
+            mean_point = [mean_point[0]/len(points), mean_point[1]/len(points)]
+
+    except:
+        print('[get_mean_point] ERROR: points [' + str(len(points)) + '] = ' + str(points)[:MAX_CHARS])
+    finally:
+        if debug:
+            print('[get_mean_point] debug: mean_point = ' + str(mean_point))
+
+    return mean_point    
+
+
+def get_position_f(new_predictions, mean):
+    distances = []
+    for x in new_predictions[0]:
+        distances.append(localizer.euclidean_distance(mean[0], x[0]))
+
+    min_pos = distances.index(min(distances))
+    pos = new_predictions[0][min_pos][0][0]
+    for i in range(len(data['Coordinates'].values)):
+        if data['Coordinates'].values[i][0] == pos:
+            print("Coordinates from KNN-mean prediction:", data['Coordinates'].values[i])
+            print("Place: ", data['Tag'].values[i])
+        if data['Coordinates'].values[i][0] == new_predictions[0][0][0][0]:
+            print("Coordinates from KNN prediction:", data['Coordinates'].values[i])
+            print("Place: ", data['Tag'].values[i])
+
+
+def get_position_s(new_predictions, mean, map): #Get the tagged position according to the prediction
+    
+    distances = []
+    for x in map:
+        distances.append(localizer.euclidean_distance(np.array(mean), np.array(x)))
+
+    min_pos = distances.index(min(distances))
+    pos = new_predictions[0][min_pos]
+    print("Result from the mean predicition: \n", pos[0][0])
+    print("Coordinate from mean prediction: \n", pos[0][1])
+
+
+
+#Load second database
+# df = read_pdf("RSSI.pdf", pages="all")
+# places = ['A0', 'A1', 'B0', 'B1', 'C0', 'C1', 'D0', 'D1', 'E0', 'E1']
+# for x in range(len(df)):
+#   #df[x].loc[len(df[x])] = df[x].columns
+#   df[x]['place'] = places[x]
+#   df[x] = df[x].set_axis(["status", "net", "rssi", "mac", "max_rssi", 'coordinates', 'place'], axis=1)
+  
+
+# data = pd.concat([df[0], df[1], df[2], df[3], df[4], df[5], df[6], df[7], df[8], df[9]])
+# data['max_rssi'] = data['max_rssi'].astype(int)
+# data['rssi'] = data['rssi'].astype(int)
+# data['delta'] = data.apply(lambda y: y['max_rssi'] - y['rssi'], axis=1)
+# print(data)
+# rssi_values = []
+# for x in places:
+#   prev = data.loc[data['place'] == x]
+#   prev = prev.sort_values(by='delta', ascending=True)
+#   rssi_values.append(prev['rssi'].astype(int).values.tolist())
+
+
+# x = rssi_values
+# cord = data["coordinates"].drop_duplicates().apply(ast.literal_eval).unique()
+# y = [item for sublist in [zip(places, cord)] for item in sublist]
+
+
+#Load first database
 data = pd.read_excel("Database.xlsx")
 data = data.drop(data.columns[[1, 2]], axis=1)
 data.columns = ["Coordinates", "1", "2", "3", "Average", "MAC"]
 data['Average'] = data['Average'].apply(pd.to_numeric)
 data[['Tag', 'Coordinates']] = data.pop('Coordinates').str.split('-', n=1, expand=True)
 data["Coordinates"] = data["Coordinates"].str.strip().apply(ast.literal_eval).apply(pd.to_numeric)
+#data = data[data['Tag'].str.contains('F2')==False]
 #Build predict variables
-x = data['Average'].values.reshape(-1,1)
+x = data[['1', '2', '3']].values
 y = data['Coordinates'].values
-k = 3 #neighbors
+k = 1 #neighbors
 localizer = KnnLocalizer(x, y, k)
     
- 
 # Adapted from http://stackoverflow.com/a/15645169/221061
 
 class TCPProxyProtocol(protocol.Protocol):
@@ -155,12 +238,35 @@ class TCPProxyProtocol(protocol.Protocol):
             self.proxy_to_server_protocol.write(data)
         else:
             self.buffer = data
-            pos_i = data.find(b'rssi') #rssi":
-            if(pos_i >= 0):
-                value = int(data[pos_i+6:pos_i+9]) #rssi value
-                lista = localizer.fit_predict(np.array(value).reshape(-1,1))
-                print(lista) 
-
+            
+            #Get values of RSSI from data
+            pos = []
+            loop = 0
+            new_data = data
+            while(1):
+                loop = new_data.find(b'rssi')
+                if(loop != -1):
+                    pos.append(int(new_data[loop+6:loop+9])) 
+                    r = new_data[loop+1:]
+                    new_data = r
+                else : break    
+                
+            
+            print(pos)
+            if(len(pos) > 0):
+                pred = localizer.fit_predict(np.array([pos[:3]])) #Get the 3 most possible routers
+                #pred = localizer.fit_predict(np.array([pos])) #second database
+                #print("Result from pred:\n", pred[0][0][0][0])
+                print("Result from pred:\n", pred[0])
+                #top = [i[0][0] for i in pred[0]]
+                #print("Other top results: \n", top)
+                #map = [i[0][1] for i in pred[0]]
+                mean = get_mean_point(pred[:][0])
+                print("Mean position give: ", mean[0])
+                get_position_f(pred, mean)
+                #mean = get_mean_point(map) #Return the mean position among the routers
+                #get_position_s(pred, mean, map) #Get the most probably fingerprint got compared to the mean
+                
 
 
 
